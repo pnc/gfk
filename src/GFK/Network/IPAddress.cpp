@@ -1,5 +1,7 @@
 #include <GFK/Network/SocketHeader.hpp>
 #include <GFK/Network/IPAddress.hpp>
+#include <GFK/System/Logger.hpp>
+#include <NetAdapter.h>
 #include <sstream>
 
 namespace gfk
@@ -68,8 +70,7 @@ std::string IPAddress::GetIPV4String() const
 	ss << static_cast<unsigned short>(GetA())
 		<< "." << static_cast<unsigned short>(GetB())
 		<< "." << static_cast<unsigned short>(GetC())
-		<< "." << static_cast<unsigned short>(GetD())
-		<< ":" << port;
+		<< "." << static_cast<unsigned short>(GetD());
 
 	return ss.str();
 }
@@ -92,6 +93,25 @@ int IPAddress::FromIPV4String(std::string address, unsigned short port, IPAddres
 	}
 
 	return result;
+}
+
+std::string IPAddress::GetBroadcastAddress()
+{
+	std::string broadcastAddress;
+	pNetAdapterInfo *adapters = new_pNetAdapterInfo();
+
+	if (adapters)
+	{
+		const NetAdapterInfo* primaryAdapter = get_primary_pNetAdapterInfo(adapters);
+
+		if (primaryAdapter)
+		{
+			broadcastAddress = std::string(primaryAdapter->Broadcast);
+			delete_pNetAdapterInfo(adapters);
+		}
+	}
+
+	return broadcastAddress;
 }
 
 }

@@ -3,6 +3,7 @@
 #include <GFK/System/GameTime.hpp>
 #include <iostream>
 #include <string>
+#include <atomic>
 
 namespace gfk
 {
@@ -11,14 +12,14 @@ class ConsoleGame
 {
 public:
 	ConsoleGame(bool isFixedTimeStep, int targetUpdateFramesPerSecond);
-	~ConsoleGame();
+	virtual ~ConsoleGame();
 	virtual void Initialize();
 	virtual void UnloadContent();
 	void Run();
 	void Tick();
 	void Exit();
 protected:
-	static bool exitRequested;
+	static std::atomic<bool> exitRequested;
 	bool isFixedTimeStep;
 	int targetUpdateFramesPerSecond;
 

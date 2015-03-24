@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <functional>
 
 namespace gfk
 {
@@ -23,10 +24,34 @@ public:
 	std::string GetIPV4String() const;
 
 	static int FromIPV4String(std::string address, unsigned short port, IPAddress &IPAddress);
+	static std::string GetBroadcastAddress();
 protected:
 private:
 	unsigned int address;
 	unsigned short port;
 };
 
+// The below operators and hash functions are needed to be able
+// to insert IPAddress objects into an unordered_set
+
+inline bool operator== (IPAddress const& lhs, IPAddress const& rhs)
+{
+	return (lhs.GetAddress() == rhs.GetAddress())
+		&& (lhs.GetPort() == rhs.GetPort());
+}
+
+}
+
+namespace std
+{
+	template <>
+	struct hash<gfk::IPAddress>
+	{
+		size_t operator()(gfk::IPAddress const &x) const
+		{
+			return ((51 + std::hash<unsigned int>()(x.GetAddress())) * 51
+				+ std::hash<unsigned short>()(x.GetPort())
+			);
+		}
+	};
 }

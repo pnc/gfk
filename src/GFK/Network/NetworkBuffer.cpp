@@ -2,6 +2,7 @@
 #include <GFK/Network/NetworkBuffer.hpp>
 #include <GFK/Network/BytePacker.hpp>
 #include <GFK/Network/IPAddress.hpp>
+#include <cstring>
 
 namespace gfk
 {
@@ -133,7 +134,28 @@ void NetworkBuffer::WriteHeaderNoCountIncrement(NetworkBuffer &headerBuffer)
 	// Copy the header buffer into this network buffer
 	// This is to support the case where the client doesn't know ahead of time
 	// how many packets it will write
-	memcpy(&dataBuffer[0], headerBuffer.GetDataBuffer(), headerBuffer.GetBufferCount());
+	std::memcpy(&dataBuffer[0], headerBuffer.GetDataBuffer(), headerBuffer.GetBufferCount());
+}
+
+void NetworkBuffer::WriteVector2(const Vector2 &v)
+{
+	WriteFloat32(v.X);
+	WriteFloat32(v.Y);
+}
+
+void NetworkBuffer::WriteVector3(const Vector3 &v)
+{
+	WriteFloat32(v.X);
+	WriteFloat32(v.Y);
+	WriteFloat32(v.Z);
+}
+
+void NetworkBuffer::WriteQuaternion(const Quaternion &q)
+{
+	WriteFloat32(q.X);
+	WriteFloat32(q.Y);
+	WriteFloat32(q.Z);
+	WriteFloat32(q.W);
 }
 
 unsigned char NetworkBuffer::ReadUnsignedByte()
@@ -242,6 +264,30 @@ double NetworkBuffer::ReadFloat64()
 	return BytePacker::UnpackFloat64(ReadUnsignedInt64());
 }
 
+Vector2 NetworkBuffer::ReadVector2()
+{
+	float x = ReadFloat32();
+	float y = ReadFloat32();
+	return Vector2(x, y);
+}
+
+Vector3 NetworkBuffer::ReadVector3()
+{
+	float x = ReadFloat32();
+	float y = ReadFloat32();
+	float z = ReadFloat32();
+	return Vector3(x, y, z);
+}
+
+Quaternion NetworkBuffer::ReadQuaternion()
+{
+	float x = ReadFloat32();
+	float y = ReadFloat32();
+	float z = ReadFloat32();
+	float w = ReadFloat32();
+	return Quaternion(x, y, z, w);
+}
+
 void NetworkBuffer::PopulateData(unsigned char *data, size_t length)
 {
 	size_t amountToCopy = length;
@@ -250,7 +296,7 @@ void NetworkBuffer::PopulateData(unsigned char *data, size_t length)
 		amountToCopy = bufferCapacity;
 	}
 
-	memcpy(&dataBuffer[0], data, amountToCopy);
+	std::memcpy(&dataBuffer[0], data, amountToCopy);
 
 	Reset();
 	bufferCounter = amountToCopy;

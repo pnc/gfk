@@ -32,6 +32,9 @@ void JetServer::Initialize()
 			HandleGamePacket(networkBuffer, protocol, clientData, gameTime);
 		}
 	);
+
+	// Run net discovery on port 55778, inform clients that port 55777 is what the server is using
+	netDiscoveryServer.Start(55778, 55777);
 }
 
 void JetServer::LoadContent()
@@ -44,6 +47,18 @@ void JetServer::UnloadContent()
 	gfk::ConsoleGame::UnloadContent();
 }
 
+void JetServer::PrintServerInfo()
+{
+	std::cout << std::endl << "There are " << netHelper.GetPlayerCount() << "/" << netHelper.GetMaxPlayerCount() << " players" << std::endl;
+	netHelper.ForEachClient([](const ClientData &client)
+		{
+			std::cout << "Client " << client.id << ": client type is " << static_cast<unsigned int>(client.clientType) << std::endl;
+		}
+	);
+
+	std::cout << std::endl;
+}
+
 void JetServer::Update(const gfk::GameTime &gameTime)
 {
 	UpdateNetwork(gameTime);
@@ -54,90 +69,72 @@ void JetServer::Update(const gfk::GameTime &gameTime)
 
 void JetServer::UpdateNetwork(const gfk::GameTime &gameTime)
 {
+	netDiscoveryServer.RespondToDiscoveryRequests();
 	netHelper.Receive(gameTime);
 }
 
 void JetServer::HandleGamePacket(NetworkBuffer &netBuffer, unsigned short protocol, ClientData &clientData, const gfk::GameTime &gameTime)
 {
-	if (protocol == Packet::NEW_DESKTOP_CLIENT_REQ)
+	if (protocol == Packet::NEW_DESKTOP_CLIENT_REQ || protocol == Packet::NEW_ANDROID_CLIENT_REQ)
 	{
 		clientData.id = playerIdCounter;
-		clientData.clientType = ClientType::DESKTOP;
-		Logger::Logf("New desktop user connected. ID is: %d\n", clientData.id);
 		playerIdCounter++;
 		clientData.jet.Reset();
 
-		// Inform all users of the new client
-		netHelper.WritePacket(NewDesktopClientPacketRes(clientData.id));
+		if (protocol == Packet::NEW_DESKTOP_CLIENT_REQ)
+		{
+			clientData.clientType = ClientType::DESKTOP;
+			Logger::Logf("New desktop user connected. ID is: %d\n", clientData.id);
+			netHelper.WritePacket(NewDesktopClientPacketRes(clientData.id), true);
+		}
+		else if (protocol == Packet::NEW_ANDROID_CLIENT_REQ)
+		{
+			clientData.clientType = ClientType::GFK_ANDROID;
+			Logger::Logf("New Android user connected. ID is: %d\n", clientData.id);
+			netHelper.WritePacket(NewAndroidClientPacketRes(clientData.id), true);
+		}
 
 		// Inform the new users of the existing clients
-		netHelper.ForEachClient([this, &clientData](const ClientData &data)
+		netHelper.ForEachClient([this, &clientData](const ClientData &otherPlayer)
 			{
-				if (data.id == clientData.id)
+				if (otherPlayer.id == clientData.id)
 				{
 					return;
 				}
 
-				if (data.clientType == ClientType::DESKTOP)
+				if (otherPlayer.clientType == ClientType::DESKTOP)
 				{
-					clientData.outbox.WritePacket(NewDesktopClientPacketRes(data.id));
+					clientData.outbox.WritePacket(NewDesktopClientPacketRes(otherPlayer.id), true);
 				}
-				else if (data.clientType == ClientType::GFK_ANDROID)
+				else if (otherPlayer.clientType == ClientType::GFK_ANDROID)
 				{
-					clientData.outbox.WritePacket(NewAndroidClientPacketRes(data.id));
+					clientData.outbox.WritePacket(NewAndroidClientPacketRes(otherPlayer.id), true);
 				}
-
 			}
 		);
 
-		clientData.outbox.WritePacket(ClientIdPacketRes(clientData.id));
+		// Inform the client of its ID
+		clientData.outbox.WritePacket(ClientIdPacketRes(clientData.id), true);
+
+		PrintServerInfo();
 	}
-	else if (protocol == Packet::NEW_ANDROID_CLIENT_REQ)
+	else if (protocol == Packet::GAME_INPUT_REQ)
 	{
-		clientData.id = playerIdCounter;
-		clientData.clientType = ClientType::GFK_ANDROID;
-		Logger::Logf("New Android user connected. ID is: %d\n", clientData.id);
-		playerIdCounter++;
-		clientData.jet.Reset();
+		GameInput input = GameInputPacketReq::ReadFromBuffer(netBuffer).input;
+		clientData.jet.Update(input, gameTime);
 
-		// Inform all users of the new client
-		netHelper.WritePacket(NewAndroidClientPacketRes(clientData.id));
-
-		// Inform the new users of the existing clients
-		netHelper.ForEachClient([this, &clientData](const ClientData &data)
-			{
-				if (data.id == clientData.id)
-				{
-					return;
-				}
-
-				if (data.clientType == ClientType::DESKTOP)
-				{
-					clientData.outbox.WritePacket(NewDesktopClientPacketRes(data.id));
-				}
-				else if (data.clientType == ClientType::GFK_ANDROID)
-				{
-					clientData.outbox.WritePacket(NewAndroidClientPacketRes(data.id));
-				}
-
-			}
-		);
-	}
-	else if (protocol == Packet::JET_INPUT_REQ)
-	{
-		float throttleAmt = netBuffer.ReadFloat32();
-		float rollInput = netBuffer.ReadFloat32();
-		float pitchInput = netBuffer.ReadFloat32();
-		float yawInput = netBuffer.ReadFloat32();
-		float thrusterEnabled = netBuffer.ReadUnsignedByte();
-		unsigned int updateCount = netBuffer.ReadUnsignedInt32();
-
-		clientData.jet.Update(throttleAmt, rollInput, pitchInput, yawInput, thrusterEnabled == 1, gameTime);
+		// TODO - validate input sequence number
+		if (input.sequenceNumber > clientData.lastInputSequenceNumber)
+		{
+			clientData.lastInputSequenceNumber = input.sequenceNumber;
+		}
 	}
 	else if (protocol == Packet::DISCONNECT_REQ)
 	{
 		Logger::Logf("User %hu wants to disconnect\n", clientData.id);
-		netHelper.WritePacket(DisconnectPacketRes(clientData.id));
+		netHelper.WritePacket(DisconnectPacketRes(clientData.id), true);
+
+		PrintServerInfo();
 	}
 }
 
@@ -155,7 +152,7 @@ void JetServer::SendStateToPlayers(const gfk::GameTime &gameTime)
 		netHelper.ForEachClient([this](const ClientData &clientData)
 			{
 				// Write jet data for all clients
-				netHelper.WritePacket(JetInputPacketRes(clientData.id, clientData.jet.GetPosition(), clientData.jet.GetRotation()));
+				netHelper.WritePacket(JetInputPacketRes(clientData.id, clientData.jet.GetPosition(), clientData.jet.GetRotation(), clientData.jet.GetEngineRPM(), clientData.lastInputSequenceNumber), false);
 			}
 		);
 

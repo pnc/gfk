@@ -4,6 +4,7 @@
 #include <GFK/Graphics/GraphicsDevice.hpp>
 #include <iostream>
 #include <string>
+#include <atomic>
 
 namespace gfk
 {
@@ -15,7 +16,7 @@ public:
 	Game(const std::string &title, 
 		 int screenWidth, 
 		 int screenHeight);
-	~Game();
+	virtual ~Game();
 	virtual void Initialize();
 	virtual void UnloadContent();
 	void Run();
@@ -24,7 +25,7 @@ public:
 	void Exit();
 protected:
 	gfk::GraphicsDevice Device;
-	static bool exitRequested;
+	static std::atomic<bool> exitRequested;
 	bool isFixedTimeStep;
 	int targetUpdateFramesPerSecond;
 
